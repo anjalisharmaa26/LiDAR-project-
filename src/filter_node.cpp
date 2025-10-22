@@ -14,12 +14,12 @@ public:
     {
         RCLCPP_INFO(this->get_logger(), "LidarFilterNode initialized.");
 
-        // Subscribe to /velodyne_points
+        // Subscribe to raw LiDAR
         sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
             "/velodyne_points", 10,
             std::bind(&LidarFilterNode::pointCloudCallback, this, std::placeholders::_1));
 
-        // Publish to /filtered_points
+        // Publish filtered points
         pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/filtered_points", 10);
     }
 
@@ -29,29 +29,27 @@ private:
         pcl::PointCloud<pcl::PointXYZI> cloud;
         pcl::fromROSMsg(*msg, cloud);
 
-        // 1️⃣ Downsample
+        // Downsample
         pcl::VoxelGrid<pcl::PointXYZI> voxel;
         voxel.setInputCloud(cloud.makeShared());
         voxel.setLeafSize(0.2f, 0.2f, 0.2f);
-
         pcl::PointCloud<pcl::PointXYZI> cloud_downsampled;
         voxel.filter(cloud_downsampled);
 
-        // 2️⃣ Crop box
+        // Crop box
         pcl::CropBox<pcl::PointXYZI> crop;
         crop.setInputCloud(cloud_downsampled.makeShared());
-        crop.setMin(Eigen::Vector4f(-10, -5, -2, 1));  // Adjust as needed
+        crop.setMin(Eigen::Vector4f(-10, -5, -2, 1));
         crop.setMax(Eigen::Vector4f(30, 5, 2, 1));
-
         pcl::PointCloud<pcl::PointXYZI> cloud_cropped;
         crop.filter(cloud_cropped);
 
-        // 3️⃣ Convert back to ROS2 message
+        // Convert to ROS message
         sensor_msgs::msg::PointCloud2 output;
         pcl::toROSMsg(cloud_cropped, output);
         output.header = msg->header;
 
-        // 4️⃣ Publish
+        // Publish
         pub_->publish(output);
         RCLCPP_INFO(this->get_logger(), "Published filtered cloud: %zu points", cloud_cropped.size());
     }
@@ -66,4 +64,4 @@ int main(int argc, char **argv)
     rclcpp::spin(std::make_shared<LidarFilterNode>());
     rclcpp::shutdown();
     return 0;
-} 
+}
