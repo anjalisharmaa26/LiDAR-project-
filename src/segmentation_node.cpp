@@ -6,13 +6,14 @@
 #include <pcl/point_types.h>
 #include <pcl/search/kdtree.h>
 #include <pcl/segmentation/extract_clusters.h>
+#include <pcl/common/common.h>
 
 class SegmentationNode : public rclcpp::Node
 {
 public:
     SegmentationNode() : Node("segmentation_node")
     {
-        RCLCPP_INFO(this->get_logger(), "SegmentationNode with Euclidean Clustering initialized");
+        RCLCPP_INFO(this->get_logger(), "SegmentationNode initialized");
 
         subscription_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
             "/filtered_points", 10,
@@ -25,7 +26,6 @@ public:
 private:
     void pointCloudCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
     {
-        // Convert ROS2 message to PCL
         pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>());
         pcl::fromROSMsg(*msg, *cloud);
 
@@ -35,38 +35,35 @@ private:
             return;
         }
 
-        // --- KDTree + Euclidean Cluster Extraction ---
         pcl::search::KdTree<pcl::PointXYZ>::Ptr tree(new pcl::search::KdTree<pcl::PointXYZ>());
         tree->setInputCloud(cloud);
 
         std::vector<pcl::PointIndices> cluster_indices;
         pcl::EuclideanClusterExtraction<pcl::PointXYZ> ec;
-        ec.setClusterTolerance(0.5); // distance threshold (meters)
-        ec.setMinClusterSize(50);    // discard small clusters
-        ec.setMaxClusterSize(25000); // discard very large clusters
+        ec.setClusterTolerance(0.5);
+        ec.setMinClusterSize(50);
+        ec.setMaxClusterSize(25000);
         ec.setSearchMethod(tree);
         ec.setInputCloud(cloud);
         ec.extract(cluster_indices);
 
-        // Combine all clusters into one cloud (can later assign colors per cluster)
-        pcl::PointCloud<pcl::PointXYZ>::Ptr clustered_cloud(new pcl::PointCloud<pcl::PointXYZ>());
+        pcl::PointCloud<pcl::PointXYZ>::Ptr segmented_cloud(new pcl::PointCloud<pcl::PointXYZ>());
         for (auto &indices : cluster_indices)
         {
             for (auto &idx : indices.indices)
-                clustered_cloud->points.push_back(cloud->points[idx]);
+                segmented_cloud->points.push_back(cloud->points[idx]);
         }
-        clustered_cloud->width = clustered_cloud->points.size();
-        clustered_cloud->height = 1;
-        clustered_cloud->is_dense = true;
 
-        // Convert back to ROS2 PointCloud2
+        segmented_cloud->width = segmented_cloud->points.size();
+        segmented_cloud->height = 1;
+        segmented_cloud->is_dense = true;
+
         sensor_msgs::msg::PointCloud2 output;
-        pcl::toROSMsg(*clustered_cloud, output);
+        pcl::toROSMsg(*segmented_cloud, output);
         output.header = msg->header;
-
         publisher_->publish(output);
-        RCLCPP_INFO(this->get_logger(), "Published %zu clusters with %zu total points",
-                    cluster_indices.size(), clustered_cloud->points.size());
+
+        RCLCPP_INFO(this->get_logger(), "Published segmented cloud with %zu points", segmented_cloud->points.size());
     }
 
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr subscription_;
